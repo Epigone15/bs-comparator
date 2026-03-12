@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comparateur Brawl Stars par Screenshot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #1b1b1b;
+    color: #fff;
+    margin: 0;
+    padding: 0;
+}
+header {
+    background: #ffcc00;
+    color: #000;
+    text-align: center;
+    padding: 20px;
+    font-size: 1.5em;
+    font-weight: bold;
+}
+main {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.upload-section {
+    display: flex;
+    gap: 30px;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.upload-card {
+    background: #2b2b2b;
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+}
+input[type="file"] {
+    margin-top: 10px;
+}
+.profiles {
+    display: flex;
+    gap: 30px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.profile-card {
+    background: #2b2b2b;
+    padding: 20px;
+    border-radius: 10px;
+    width: 320px;
+}
+h2 {
+    text-align: center;
+    color: #ffcc00;
+}
+.brawler-list {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    gap: 5px;
+}
+.brawler {
+    background: #444;
+    border-radius: 5px;
+    text-align: center;
+    padding: 5px;
+    font-size: 0.8em;
+}
+canvas {
+    margin-top: 15px;
+}
+.loader {
+    color: #ffcc00;
+    font-weight: bold;
+}
+</style>
+</head>
+<body>
+<header>Comparateur Brawl Stars par Screenshot</header>
+<main>
+
+<div class="upload-section">
+    <div class="upload-card">
+        <h3>Joueur 1</h3>
+        <input type="file" id="screenshot1" accept="image/*">
+        <p id="loader1" class="loader"></p>
+    </div>
+    <div class="upload-card">
+        <h3>Joueur 2</h3>
+        <input type="file" id="screenshot2" accept="image/*">
+        <p id="loader2" class="loader"></p>
+    </div>
+</div>
+
+<div class="profiles">
+    <div class="profile-card" id="profile1Card">
+        <h2 id="pseudo1Display">Joueur 1</h2>
+        <p>Trophées: <span id="trophies1Display">0</span></p>
+        <p>Meilleur Brawler: <span id="bestBrawler1Display">—</span></p>
+        <div class="brawler-list" id="brawlers1Display"></div>
+        <canvas id="chart1" width="280" height="150"></canvas>
+    </div>
+
+    <div class="profile-card" id="profile2Card">
+        <h2 id="pseudo2Display">Joueur 2</h2>
+        <p>Trophées: <span id="trophies2Display">0</span></p>
+        <p>Meilleur Brawler: <span id="bestBrawler2Display">—</span></p>
+        <div class="brawler-list" id="brawlers2Display"></div>
+        <canvas id="chart2" width="280" height="150"></canvas>
+    </div>
+</div>
+
+<script>
+function parseBrawlersFromText(text) {
+    // Cherche les patterns "nom:niveau" ou "nom niveau" dans le texte OCR
+    const lines = text.split(/\n/);
+    const brawlers = [];
+    lines.forEach(line => {
+        const match = line.match(/([a-zA-Z]+)\s*[:\-]?\s*(\d+)/);
+        if(match){
+            brawlers.push({name: match[1], level: Number(match[2])});
+        }
+    });
+    return brawlers;
+}
+
+function displayProfile(pseudo, trophies, bestBrawler, brawlers, pseudoElem, trophiesElem, bestElem, brawlersElem, chartElem){
+    pseudoElem.textContent = pseudo;
+    trophiesElem.textContent = trophies;
+    bestElem.textContent = bestBrawler;
+
+    brawlersElem.innerHTML = '';
+    const names = [];
+    const levels = [];
+    brawlers.forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'brawler';
+        div.textContent = `${b.name} Lv.${b.level}`;
+        brawlersElem.appendChild(div);
+        names.push(b.name);
+        levels.push(b.level);
+    });
+
+    new Chart(chartElem, {
+        type:'bar',
+        data:{
+            labels:names,
+            datasets:[{
+                label:'Niveau Brawlers',
+                data: levels,
+                backgroundColor:'#ffcc00'
+            }]
+        },
+        options:{responsive:true, plugins:{legend:{display:false}}}
+    });
+}
+
+async function processScreenshot(fileInput, loaderElem, pseudoElem, trophiesElem, bestElem, brawlersElem, chartElem){
+    const file = fileInput.files[0];
+    if(!file) return;
+    loaderElem.textContent = 'Analyse en cours... ⏳';
+
+    const {data: {text}} = await Tesseract.recognize(file, 'fra', {logger: m => console.log(m)});
+    
+    // Exemple de parsing simple (à adapter selon format des captures)
+    const lines = text.split(/\n/).map(l => l.trim()).filter(l=>l.length>0);
+    let pseudo = lines[0] || "Joueur";
+    let trophies = 0;
+    let bestBrawler = "—";
+    const brawlers = [];
+
+    lines.forEach(l=>{
+        const tro = l.match(/(\d+)\s*troph/i);
+        if(tro) trophies = Number(tro[1]);
+        const best = l.match(/Meilleur\s*Brawler\s*[:\-]?\s*([a-zA-Z]+)/i);
+        if(best) bestBrawler = best[1];
+    });
+
+    const parsedBrawlers = parseBrawlersFromText(text);
+    if(parsedBrawlers.length>0){
+        parsedBrawlers.forEach(b => brawlers.push(b));
+        if(!bestBrawler && brawlers.length>0) bestBrawler = brawlers.reduce((a,b)=>a.level>b.level?a.name:b.name,"");
+    }
+
+    displayProfile(pseudo, trophies, bestBrawler, brawlers, pseudoElem, trophiesElem, bestElem, brawlersElem, chartElem);
+    loaderElem.textContent = '✅ Analyse terminée';
+}
+
+// Gestion des uploads
+document.getElementById('screenshot1').addEventListener('change', ()=>{
+    processScreenshot(
+        document.getElementById('screenshot1'),
+        document.getElementById('loader1'),
+        document.getElementById('pseudo1Display'),
+        document.getElementById('trophies1Display'),
+        document.getElementById('bestBrawler1Display'),
+        document.getElementById('brawlers1Display'),
+        document.getElementById('chart1')
+    );
+});
+document.getElementById('screenshot2').addEventListener('change', ()=>{
+    processScreenshot(
+        document.getElementById('screenshot2'),
+        document.getElementById('loader2'),
+        document.getElementById('pseudo2Display'),
+        document.getElementById('trophies2Display'),
+        document.getElementById('bestBrawler2Display'),
+        document.getElementById('brawlers2Display'),
+        document.getElementById('chart2')
+    );
+});
+</script>
+
+</body>
+</html>
